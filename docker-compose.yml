@@ -1,0 +1,126 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: cluster_iac_postgres
+    environment:
+      POSTGRES_DB: cluster_iac
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - cluster_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: cluster_iac_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - cluster_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Product Service
+  product-service:
+    build:
+      context: .
+      dockerfile: dockerfiles/product.Dockerfile
+    container_name: cluster_iac_product
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: cluster_iac
+      DB_SSLMODE: disable
+      SERVER_PORT: 8080
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - cluster_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Basket Service
+  basket-service:
+    build:
+      context: .
+      dockerfile: dockerfiles/basket.Dockerfile
+    container_name: cluster_iac_basket
+    environment:
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: 
+      REDIS_DB: 0
+      BASKET_SERVER_PORT: 8081
+      PRODUCT_GRPC_ADDR: product-service:50051
+    ports:
+      - "8081:8081"
+    depends_on:
+      redis:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+    networks:
+      - cluster_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: .
+      dockerfile: dockerfiles/gateway.Dockerfile
+    container_name: cluster_iac_gateway
+    environment:
+      PRODUCT_SERVICE_URL: http://product-service:8080
+      BASKET_SERVICE_URL: http://basket-service:8081
+      GATEWAY_PORT: 8082
+    ports:
+      - "8082:8082"
+    depends_on:
+      product-service:
+        condition: service_healthy
+      basket-service:
+        condition: service_healthy
+    networks:
+      - cluster_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8082/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  cluster_network:
+    driver: bridge
