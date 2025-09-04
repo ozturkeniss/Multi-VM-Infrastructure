@@ -1,0 +1,14 @@
+---
+- name: reload systemd
+  systemd:
+    daemon_reload: yes
+
+- name: restart product service
+  systemd:
+    name: cluster-iac-product
+    state: restarted
+
+- name: restart basket service
+  systemd:
+    name: cluster-iac-basket
+    state: restarted

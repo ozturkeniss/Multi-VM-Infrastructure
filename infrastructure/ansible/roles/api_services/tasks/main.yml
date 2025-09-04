@@ -1,0 +1,80 @@
+---
+- name: Install required packages for API services
+  apt:
+    name:
+      - docker.io
+      - postgresql-client
+      - redis-tools
+      - curl
+      - wget
+      - htop
+    state: present
+
+- name: Add ubuntu user to docker group
+  user:
+    name: ubuntu
+    groups: docker
+    append: yes
+
+- name: Create application directory
+  file:
+    path: "{{ app_dir }}"
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: '0755'
+
+- name: Create log directory
+  file:
+    path: /var/log/cluster-iac
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: '0755'
+
+- name: Create product service systemd unit
+  template:
+    src: cluster-iac-product.service.j2
+    dest: /etc/systemd/system/cluster-iac-product.service
+    mode: '0644'
+  notify:
+    - reload systemd
+
+- name: Create basket service systemd unit
+  template:
+    src: cluster-iac-basket.service.j2
+    dest: /etc/systemd/system/cluster-iac-basket.service
+    mode: '0644'
+  notify:
+    - reload systemd
+
+- name: Create health check script
+  template:
+    src: health-check.sh.j2
+    dest: /usr/local/bin/health-check.sh
+    mode: '0755'
+
+- name: Setup health check cron job
+  cron:
+    name: API services health check
+    minute: "*/5"
+    user: ubuntu
+    job: "/usr/local/bin/health-check.sh >> /var/log/cluster-iac/health-check.log 2>&1"
+
+- name: Install monitoring tools
+  apt:
+    name:
+      - prometheus-node-exporter
+    state: present
+
+- name: Start and enable node exporter
+  systemd:
+    name: prometheus-node-exporter
+    state: started
+    enabled: yes
+
+- name: Configure logrotate for application logs
+  template:
+    src: cluster-iac-logrotate.j2
+    dest: /etc/logrotate.d/cluster-iac
+    mode: '0644'

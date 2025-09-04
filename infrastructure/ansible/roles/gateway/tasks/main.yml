@@ -1,0 +1,106 @@
+---
+- name: Install required packages for gateway
+  apt:
+    name:
+      - docker.io
+      - nginx
+      - curl
+      - wget
+      - htop
+      - certbot
+      - python3-certbot-nginx
+    state: present
+
+- name: Add ubuntu user to docker group
+  user:
+    name: ubuntu
+    groups: docker
+    append: yes
+
+- name: Create application directory
+  file:
+    path: "{{ app_dir }}"
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: '0755'
+
+- name: Create log directory
+  file:
+    path: /var/log/cluster-iac
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: '0755'
+
+- name: Create gateway service systemd unit
+  template:
+    src: cluster-iac-gateway.service.j2
+    dest: /etc/systemd/system/cluster-iac-gateway.service
+    mode: '0644'
+  notify:
+    - reload systemd
+
+- name: Configure nginx for API gateway
+  template:
+    src: nginx-cluster-iac.conf.j2
+    dest: /etc/nginx/sites-available/cluster-iac
+    mode: '0644'
+  notify: restart nginx
+
+- name: Enable nginx site
+  file:
+    src: /etc/nginx/sites-available/cluster-iac
+    dest: /etc/nginx/sites-enabled/cluster-iac
+    state: link
+  notify: restart nginx
+
+- name: Disable default nginx site
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: restart nginx
+
+- name: Configure nginx security headers
+  template:
+    src: nginx-security.conf.j2
+    dest: /etc/nginx/conf.d/security.conf
+    mode: '0644'
+  notify: restart nginx
+
+- name: Start and enable nginx
+  systemd:
+    name: nginx
+    state: started
+    enabled: yes
+
+- name: Install monitoring tools
+  apt:
+    name:
+      - prometheus-node-exporter
+    state: present
+
+- name: Start and enable node exporter
+  systemd:
+    name: prometheus-node-exporter
+    state: started
+    enabled: yes
+
+- name: Configure logrotate for application logs
+  template:
+    src: cluster-iac-logrotate.j2
+    dest: /etc/logrotate.d/cluster-iac
+    mode: '0644'
+
+- name: Setup log monitoring script
+  template:
+    src: log-monitor.sh.j2
+    dest: /usr/local/bin/log-monitor.sh
+    mode: '0755'
+
+- name: Setup log monitoring cron job
+  cron:
+    name: Gateway log monitoring
+    minute: "*/10"
+    user: ubuntu
+    job: "/usr/local/bin/log-monitor.sh >> /var/log/cluster-iac/log-monitor.log 2>&1"

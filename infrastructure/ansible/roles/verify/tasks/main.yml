@@ -1,0 +1,110 @@
+---
+- name: Check storage services health
+  uri:
+    url: "http://localhost:{{ item.port }}/health"
+    method: GET
+    timeout: 10
+    status_code: 200
+  loop:
+    - { port: 5432, name: "PostgreSQL" }
+    - { port: 6379, name: "Redis" }
+  when: inventory_hostname in groups['storage']
+  ignore_errors: yes
+  register: storage_health
+
+- name: Check API services health
+  uri:
+    url: "http://localhost:{{ item.port }}/health"
+    method: GET
+    timeout: 10
+    status_code: 200
+  loop:
+    - { port: 8080, name: "Product Service" }
+    - { port: 8081, name: "Basket Service" }
+  when: inventory_hostname in groups['api_services']
+  register: api_health
+
+- name: Check gateway service health
+  uri:
+    url: "http://localhost:8082/health"
+    method: GET
+    timeout: 10
+    status_code: 200
+  when: inventory_hostname in groups['gateway']
+  register: gateway_health
+
+- name: Check nginx status
+  uri:
+    url: "http://localhost/health"
+    method: GET
+    timeout: 10
+    status_code: 200
+  when: inventory_hostname in groups['gateway']
+  register: nginx_health
+
+- name: Test product API endpoints
+  uri:
+    url: "http://localhost:8080/products"
+    method: GET
+    timeout: 10
+    status_code: 200
+  when: inventory_hostname in groups['api_services']
+  register: product_api_test
+
+- name: Test basket API endpoints
+  uri:
+    url: "http://localhost:8081/baskets/test-user"
+    method: GET
+    timeout: 10
+    status_code: 200
+  when: inventory_hostname in groups['api_services']
+  register: basket_api_test
+
+- name: Test end-to-end connectivity from gateway
+  uri:
+    url: "http://localhost/api/products"
+    method: GET
+    timeout: 10
+    status_code: 200
+  when: inventory_hostname in groups['gateway']
+  register: e2e_test
+
+- name: Display verification results
+  debug:
+    msg: |
+      === Cluster IAC Deployment Verification ===
+      
+      Storage Layer ({{ inventory_hostname }}):
+      {% if inventory_hostname in groups['storage'] %}
+      - PostgreSQL: {{ 'HEALTHY' if storage_health.results[0].status == 200 else 'FAILED' }}
+      - Redis: {{ 'HEALTHY' if storage_health.results[1].status == 200 else 'FAILED' }}
+      {% endif %}
+      
+      API Services Layer ({{ inventory_hostname }}):
+      {% if inventory_hostname in groups['api_services'] %}
+      - Product Service: {{ 'HEALTHY' if api_health.results[0].status == 200 else 'FAILED' }}
+      - Basket Service: {{ 'HEALTHY' if api_health.results[1].status == 200 else 'FAILED' }}
+      - Product API: {{ 'WORKING' if product_api_test.status == 200 else 'FAILED' }}
+      - Basket API: {{ 'WORKING' if basket_api_test.status == 200 else 'FAILED' }}
+      {% endif %}
+      
+      Gateway Layer ({{ inventory_hostname }}):
+      {% if inventory_hostname in groups['gateway'] %}
+      - Gateway Service: {{ 'HEALTHY' if gateway_health.status == 200 else 'FAILED' }}
+      - Nginx Proxy: {{ 'HEALTHY' if nginx_health.status == 200 else 'FAILED' }}
+      - End-to-End: {{ 'WORKING' if e2e_test.status == 200 else 'FAILED' }}
+      {% endif %}
+
+- name: Generate deployment report
+  template:
+    src: deployment-report.html.j2
+    dest: /tmp/deployment-report-{{ inventory_hostname }}.html
+    mode: '0644'
+  delegate_to: localhost
+
+- name: Fetch deployment reports
+  fetch:
+    src: /tmp/deployment-report-{{ inventory_hostname }}.html
+    dest: ./reports/
+    flat: yes
+  when: inventory_hostname in groups['gateway']

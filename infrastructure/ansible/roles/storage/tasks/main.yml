@@ -1,0 +1,101 @@
+---
+- name: Install required packages for storage
+  apt:
+    name:
+      - docker.io
+      - docker-compose
+      - postgresql-client
+      - redis-tools
+    state: present
+
+- name: Add ubuntu user to docker group
+  user:
+    name: ubuntu
+    groups: docker
+    append: yes
+
+- name: Create data directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: '0755'
+  loop:
+    - /data
+    - /data/postgresql
+    - /data/redis
+    - /data/backups
+    - /data/backups/postgresql
+    - /data/backups/redis
+
+- name: Copy docker-compose file for storage services
+  template:
+    src: docker-compose-storage.yml.j2
+    dest: /opt/docker-compose-storage.yml
+    owner: ubuntu
+    group: ubuntu
+    mode: '0644'
+  notify: restart storage services
+
+- name: Create storage systemd service
+  template:
+    src: cluster-iac-storage.service.j2
+    dest: /etc/systemd/system/cluster-iac-storage.service
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart storage services
+
+- name: Start and enable storage services
+  systemd:
+    name: cluster-iac-storage
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: Wait for PostgreSQL to be ready
+  wait_for:
+    port: 5432
+    host: localhost
+    timeout: 60
+
+- name: Wait for Redis to be ready
+  wait_for:
+    port: 6379
+    host: localhost
+    timeout: 60
+
+- name: Create backup scripts
+  template:
+    src: "{{ item }}.j2"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: '0755'
+  loop:
+    - postgres-backup.sh
+    - redis-backup.sh
+    - storage-health-check.sh
+
+- name: Setup backup cron jobs
+  cron:
+    name: "{{ item.name }}"
+    minute: "{{ item.minute }}"
+    hour: "{{ item.hour }}"
+    user: root
+    job: "{{ item.job }}"
+  loop:
+    - name: PostgreSQL backup
+      minute: "0"
+      hour: "2"
+      job: "/usr/local/bin/postgres-backup.sh >> /var/log/postgres-backup.log 2>&1"
+    - name: Redis backup
+      minute: "0" 
+      hour: "3"
+      job: "/usr/local/bin/redis-backup.sh >> /var/log/redis-backup.log 2>&1"
+
+- name: Setup health check cron job
+  cron:
+    name: Storage health check
+    minute: "*/5"
+    user: ubuntu
+    job: "/usr/local/bin/storage-health-check.sh >> /var/log/storage-health.log 2>&1"

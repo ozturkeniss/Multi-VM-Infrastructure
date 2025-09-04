@@ -1,0 +1,118 @@
+---
+- name: Create temporary build directory
+  file:
+    path: /tmp/cluster-iac-build
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  run_once: true
+
+- name: Copy source code to build directory
+  synchronize:
+    src: "{{ playbook_dir }}/../../"
+    dest: /tmp/cluster-iac-build/
+    delete: yes
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=infrastructure"
+      - "--exclude=.gitignore"
+      - "--exclude=README.md"
+      - "--exclude=*.log"
+  delegate_to: localhost
+  run_once: true
+
+- name: Build Go applications
+  shell: |
+    cd /tmp/cluster-iac-build
+    export GOOS=linux GOARCH=amd64 CGO_ENABLED=0
+    go mod download
+    go build -ldflags="-w -s" -o product ./cmd/product
+    go build -ldflags="-w -s" -o basket ./cmd/basket  
+    go build -ldflags="-w -s" -o gateway ./fiber-gateway
+  delegate_to: localhost
+  run_once: true
+
+- name: Deploy product service binary
+  copy:
+    src: /tmp/cluster-iac-build/product
+    dest: "{{ app_dir }}/product"
+    owner: ubuntu
+    group: ubuntu
+    mode: '0755'
+  when: inventory_hostname in groups['api_services']
+  notify:
+    - restart product service
+
+- name: Deploy basket service binary
+  copy:
+    src: /tmp/cluster-iac-build/basket
+    dest: "{{ app_dir }}/basket"
+    owner: ubuntu
+    group: ubuntu
+    mode: '0755'
+  when: inventory_hostname in groups['api_services']
+  notify:
+    - restart basket service
+
+- name: Deploy gateway binary
+  copy:
+    src: /tmp/cluster-iac-build/gateway
+    dest: "{{ app_dir }}/gateway"
+    owner: ubuntu
+    group: ubuntu
+    mode: '0755'
+  when: inventory_hostname in groups['gateway']
+  notify:
+    - restart gateway service
+
+- name: Start and enable product service
+  systemd:
+    name: cluster-iac-product
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  when: inventory_hostname in groups['api_services']
+
+- name: Wait for product service to be ready
+  wait_for:
+    port: 8080
+    host: localhost
+    timeout: 60
+  when: inventory_hostname in groups['api_services']
+
+- name: Start and enable basket service
+  systemd:
+    name: cluster-iac-basket
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  when: inventory_hostname in groups['api_services']
+
+- name: Wait for basket service to be ready
+  wait_for:
+    port: 8081
+    host: localhost
+    timeout: 60
+  when: inventory_hostname in groups['api_services']
+
+- name: Start and enable gateway service
+  systemd:
+    name: cluster-iac-gateway
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  when: inventory_hostname in groups['gateway']
+
+- name: Wait for gateway service to be ready
+  wait_for:
+    port: 8082
+    host: localhost
+    timeout: 60
+  when: inventory_hostname in groups['gateway']
+
+- name: Clean up build directory
+  file:
+    path: /tmp/cluster-iac-build
+    state: absent
+  delegate_to: localhost
+  run_once: true

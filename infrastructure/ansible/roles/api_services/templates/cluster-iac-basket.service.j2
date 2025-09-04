@@ -1,0 +1,37 @@
+[Unit]
+Description=Cluster IAC Basket Service
+After=network.target cluster-iac-product.service
+Wants=network-online.target
+Requires=cluster-iac-product.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory={{ app_dir }}
+Environment=REDIS_ADDR={{ hostvars['storage-server']['private_ip'] }}:6379
+Environment=REDIS_PASSWORD=
+Environment=REDIS_DB=0
+Environment=BASKET_SERVER_PORT=8081
+Environment=PRODUCT_GRPC_ADDR=localhost:50051
+ExecStart={{ app_dir }}/basket
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/cluster-iac/basket.log
+StandardError=append:/var/log/cluster-iac/basket-error.log
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ app_dir }} /var/log/cluster-iac
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=1G
+CPUQuota=100%
+
+[Install]
+WantedBy=multi-user.target

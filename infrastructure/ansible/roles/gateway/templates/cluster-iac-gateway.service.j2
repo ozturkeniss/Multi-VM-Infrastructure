@@ -1,0 +1,34 @@
+[Unit]
+Description=Cluster IAC API Gateway
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory={{ app_dir }}
+Environment=PRODUCT_SERVICE_URL=http://{{ hostvars['api-services-server']['private_ip'] }}:8080
+Environment=BASKET_SERVICE_URL=http://{{ hostvars['api-services-server']['private_ip'] }}:8081
+Environment=GATEWAY_PORT=8082
+ExecStart={{ app_dir }}/gateway
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/cluster-iac/gateway.log
+StandardError=append:/var/log/cluster-iac/gateway-error.log
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ app_dir }} /var/log/cluster-iac
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=512M
+CPUQuota=100%
+
+[Install]
+WantedBy=multi-user.target

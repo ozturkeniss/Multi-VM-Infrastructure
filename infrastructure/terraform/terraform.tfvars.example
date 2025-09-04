@@ -1,0 +1,28 @@
+# AWS Configuration
+aws_region = "eu-west-1"
+
+# Project Configuration
+project_name = "cluster-iac"
+environment  = "production"
+
+# Network Configuration
+vpc_cidr             = "10.0.0.0/16"
+availability_zones   = ["eu-west-1a", "eu-west-1b", "eu-west-1c"]
+public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+
+# Instance Configuration
+instance_types = {
+  gateway      = "t3.medium"   # 2 vCPU, 4 GB RAM - API Gateway
+  api_services = "t3.large"    # 2 vCPU, 8 GB RAM - Product & Basket Services
+  storage      = "t3.xlarge"   # 4 vCPU, 16 GB RAM - PostgreSQL & Redis
+}
+
+# SSH Key (paste your public key here)
+public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAA... your-public-key-here"
+
+# Security
+allowed_cidr_blocks = ["0.0.0.0/0"]  # Restrict this to your IP range for better security
+
+# Monitoring and Backup
+enable_monitoring       = true
+backup_retention_days   = 7

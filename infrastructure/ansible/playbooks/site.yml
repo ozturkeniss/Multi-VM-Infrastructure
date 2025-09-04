@@ -1,0 +1,55 @@
+---
+- name: Deploy Cluster IAC Infrastructure
+  hosts: all
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    project_name: cluster-iac
+    app_user: ubuntu
+    app_dir: /opt/cluster-iac
+    
+  pre_tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      
+    - name: Wait for system to be ready
+      wait_for_connection:
+        timeout: 300
+
+- name: Configure Storage Layer
+  hosts: storage
+  become: yes
+  roles:
+    - storage
+  tags: [storage]
+
+- name: Configure API Services Layer  
+  hosts: api_services
+  become: yes
+  roles:
+    - api_services
+  tags: [api_services]
+
+- name: Configure Gateway Layer
+  hosts: gateway
+  become: yes
+  roles:
+    - gateway
+  tags: [gateway]
+
+- name: Deploy Application
+  hosts: all
+  become: yes
+  roles:
+    - deploy
+  tags: [deploy]
+
+- name: Verify Deployment
+  hosts: all
+  become: no
+  roles:
+    - verify
+  tags: [verify]

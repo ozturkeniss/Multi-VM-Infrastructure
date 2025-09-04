@@ -1,0 +1,38 @@
+[Unit]
+Description=Cluster IAC Product Service
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory={{ app_dir }}
+Environment=DB_HOST={{ hostvars['storage-server']['private_ip'] }}
+Environment=DB_PORT=5432
+Environment=DB_USER=postgres
+Environment=DB_PASSWORD=postgres
+Environment=DB_NAME=cluster_iac
+Environment=DB_SSLMODE=disable
+Environment=SERVER_PORT=8080
+ExecStart={{ app_dir }}/product
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/cluster-iac/product.log
+StandardError=append:/var/log/cluster-iac/product-error.log
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ app_dir }} /var/log/cluster-iac
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=1G
+CPUQuota=100%
+
+[Install]
+WantedBy=multi-user.target
